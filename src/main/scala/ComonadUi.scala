@@ -68,7 +68,7 @@ case class Zipper[A](l: List[A], x: A, r: List[A]) {
   def rightList(): List[Zipper[A]] = right().fold(List.empty[Zipper[A]])(z => z :: z.rightList())
 }
 
-case object Zipper {
+object Zipper {
   implicit val comonad: Comonad[Zipper] = new Comonad[Zipper] {
     override def extract[A](x: Zipper[A]): A = x.x
 
@@ -137,6 +137,27 @@ object Transition {
     }
 
     override def tailRecM[A, B](a: A)(f: A => Transition[W, Either[A, B]]): Transition[W, B] = ???
+  }
+
+}
+
+case class StoreT[S, W[_], A](show: W[S => A], state: S)
+
+object StoreT {
+
+  implicit def comonad[S, W[_]: Comonad]: Comonad[StoreT[S, W, ?]] = new Comonad[StoreT[S, W, ?]] {
+    override def extract[A](x: StoreT[S, W, A]): A = x.show.extract(x.state)
+
+    override def coflatMap[A, B](fa: StoreT[S, W, A])(f: StoreT[S, W, A] => B): StoreT[S, W, B] = {
+      val fx: W[S => StoreT[S, W, A]] = fa.show.map { _ => StoreT(fa.show, _) }
+      val x: StoreT[S, W, StoreT[S, W, A]] = StoreT(fx, fa.state)
+      map(x)(f)
+      ???
+    }
+
+    override def map[A, B](fa: StoreT[S, W, A])(f: A => B): StoreT[S, W, B] = {
+      StoreT(fa.show.map(_.andThen(f)), fa.state)
+    }
   }
 
 }
