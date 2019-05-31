@@ -22,6 +22,64 @@ object ComonadUi extends App {
   println(w2.extract)
 }
 
+object Util {
+  def pairTransition[W[_]: Functor, A, B, C](f: A => B => C)(t: Transition[W, B])(w: W[A]): C = {
+    t.runTransition(w.map(f))
+  }
+
+  def moveLeft: Transition[Zipper, Unit] = new Transition[Zipper, Unit] {
+    override def runTransition[R]: Zipper[Unit => R] => R = { z: Zipper[Unit => R] =>
+      z.left().get.extract(())
+    }
+  }
+
+  def moveRight: Transition[Zipper, Unit] = new Transition[Zipper, Unit] {
+    override def runTransition[R]: Zipper[Unit => R] => R = { z: Zipper[Unit => R] =>
+      z.right().get.extract(())
+    }
+  }
+
+  def get[S]: Transition[Store[S, ?], S] = new Transition[Store[S, ?], S] {
+    override def runTransition[R]: Store[S, S => R] => R = { s: Store[S, S => R] =>
+      s.extract(s.state)
+    }
+  }
+
+  def put[S](state: S): Transition[Store[S, ?], Unit] = new Transition[Store[S, ?], Unit] {
+    override def runTransition[R]: Store[S, Unit => R] => R = { s =>
+      s.show(state)()
+    }
+  }
+}
+
+case class Zipper[A](l: List[A], x: A, r: List[A]) {
+  def left(): Option[Zipper[A]] = l match {
+    case head :: xs => Some(Zipper(xs, head, x :: r))
+    case _ => None
+  }
+
+  def leftList(): List[Zipper[A]] = left().fold(List.empty[Zipper[A]])(z => z :: z.leftList())
+
+  def right(): Option[Zipper[A]] = r match {
+    case head :: xs => Some(Zipper(x :: l, head, xs))
+    case _ => None
+  }
+
+  def rightList(): List[Zipper[A]] = right().fold(List.empty[Zipper[A]])(z => z :: z.rightList())
+}
+
+case object Zipper {
+  implicit val comonad: Comonad[Zipper] = new Comonad[Zipper] {
+    override def extract[A](x: Zipper[A]): A = x.x
+
+    override def coflatMap[A, B](fa: Zipper[A])(f: Zipper[A] => B): Zipper[B] = {
+      Zipper(fa.leftList().map(f), f(fa), fa.rightList().map(f))
+    }
+
+    override def map[A, B](fa: Zipper[A])(f: A => B): Zipper[B] = Zipper(fa.l.map(f), f(fa.x), fa.r.map(f))
+  }
+}
+
 case class Store[S, A](show: S => A, state: S)
 
 object Store {
@@ -73,7 +131,6 @@ object Transition {
         fa.runTransition(wbr.coflatMap(x))
       }
     }
-
 
     override def pure[A](x: A): Transition[W, A] = new Transition[W, A] {
       override def runTransition[R]: W[A => R] => R = _.extract(x)
